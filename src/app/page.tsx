@@ -182,8 +182,9 @@ export default function Home() {
           ? { ...chat, messages: [...chat.messages, assistantMessage] }
           : chat
       ));
-    } catch (error) {
-      if (error.name === 'AbortError') return;
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      
       console.error('Error:', error);
       const errorMessage: Message = {
         role: 'assistant',
