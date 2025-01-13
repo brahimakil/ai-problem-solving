@@ -21,6 +21,12 @@ export default function Home() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [showSpaceHint, setShowSpaceHint] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  const currentChat = chats.find(chat => chat.id === currentChatId);
 
   useEffect(() => {
     const savedChats = localStorage.getItem('chats');
@@ -43,6 +49,53 @@ export default function Home() {
     }
   }, [currentChatId]);
 
+  useEffect(() => {
+    const scrollToBottom = () => {
+      if (chatEndRef.current) {
+        chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    };
+
+    // Scroll on new messages or loading state change
+    scrollToBottom();
+
+    // Also scroll after a short delay to handle dynamic content
+    const timeoutId = setTimeout(scrollToBottom, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [currentChat?.messages, loading]);
+
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === ' ' && 
+          !loading && 
+          document.activeElement?.tagName !== 'INPUT' && 
+          document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [loading]);
+
+  useEffect(() => {
+    const showHint = () => {
+      setShowSpaceHint(true);
+      setTimeout(() => setShowSpaceHint(false), 7000); // Hide after 7 seconds
+    };
+
+    // Show hint on initial load
+    showHint();
+
+    // Add event listener for new chat creation
+    const handleNewChat = () => showHint();
+    window.addEventListener('newChat', handleNewChat);
+
+    return () => window.removeEventListener('newChat', handleNewChat);
+  }, []);
+
   const startNewChat = () => {
     const newChat: Chat = {
       id: Date.now().toString(),
@@ -53,6 +106,7 @@ export default function Home() {
     setCurrentChatId(newChat.id);
     setPrompt('');
     setIsHistoryOpen(false);
+    window.dispatchEvent(new Event('newChat'));
   };
 
   const deleteChat = (chatId: string, e: React.MouseEvent) => {
@@ -63,9 +117,30 @@ export default function Home() {
     }
   };
 
+  const handleStopGeneration = () => {
+    if (abortController) {
+      abortController.abort();
+    }
+    setIsGenerating(false);
+    setLoading(false);
+    const stopMessage: Message = {
+      role: 'assistant',
+      content: '🛑 Problem solving AI stopped.'
+    };
+    setChats(prev => prev.map(chat => 
+      chat.id === currentChatId 
+        ? { ...chat, messages: [...chat.messages, stopMessage] }
+        : chat
+    ));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim() || loading || !currentChatId) return;
+    
+    const controller = new AbortController();
+    setAbortController(controller);
+    setIsGenerating(true);
 
     const userMessage: Message = { role: 'user', content: prompt.trim() };
     setPrompt('');
@@ -81,7 +156,7 @@ export default function Home() {
     try {
       const currentChat = chats.find(chat => chat.id === currentChatId);
       const conversationContext = currentChat?.messages
-        .map(msg => `${msg.role}: ${msg.content}`)
+        .map(msg => msg.role === 'user' ? `user: ${msg.content}` : msg.content)
         .join('\n\n');
       
       const fullPrompt = conversationContext 
@@ -92,6 +167,7 @@ export default function Home() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: fullPrompt }),
+        signal: controller.signal
       });
 
       const data = await res.json();
@@ -101,13 +177,13 @@ export default function Home() {
 
       const assistantMessage: Message = { role: 'assistant', content: data.response };
       
-      // Update current chat with AI response
       setChats(prev => prev.map(chat => 
         chat.id === currentChatId 
           ? { ...chat, messages: [...chat.messages, assistantMessage] }
           : chat
       ));
     } catch (error) {
+      if (error.name === 'AbortError') return;
       console.error('Error:', error);
       const errorMessage: Message = {
         role: 'assistant',
@@ -119,11 +195,11 @@ export default function Home() {
           : chat
       ));
     } finally {
+      setAbortController(null);
       setLoading(false);
+      setIsGenerating(false);
     }
   };
-
-  const currentChat = chats.find(chat => chat.id === currentChatId);
 
   const formatResponseText = (text: string) => {
     return text.split('\n').map((line, index) => (
@@ -260,10 +336,22 @@ export default function Home() {
           </div>
         </div>
 
+        <div className="max-w-3xl mx-auto px-2 sm:px-4 mb-4">
+          <div className={`
+            transition-all duration-500 ease-in-out
+            ${showSpaceHint ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}
+          `}>
+            <div className="bg-gray-800/50 backdrop-blur-sm px-4 py-2 rounded-lg text-gray-400 text-sm text-center">
+              Press <kbd className="px-2 py-1 bg-gray-700 rounded-md text-gray-300 text-xs">space</kbd> to type
+            </div>
+          </div>
+        </div>
+
         <div className="border-t border-gray-700/50 bg-[#343541]">
           <div className="max-w-3xl mx-auto px-2 sm:px-4 py-2 sm:py-4">
-            <form ref={formRef} onSubmit={handleSubmit} className="relative">
+            <form ref={formRef} onSubmit={handleSubmit} className="relative mb-4">
               <input
+                ref={inputRef}
                 type="text"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -275,20 +363,38 @@ export default function Home() {
                     }
                   }
                 }}
-                className="w-full bg-[#40414F] text-gray-100 rounded-xl border border-gray-700 px-4 py-3 pr-12 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 focus:outline-none"
+                className="w-full bg-[#40414F] text-gray-100 rounded-xl border border-gray-700 px-4 py-3 pr-24 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 focus:outline-none"
                 placeholder="Send a message..."
                 disabled={loading || !currentChatId}
               />
-              <button
-                type="submit"
-                disabled={loading || !prompt.trim() || !currentChatId}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-gray-300 hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </button>
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                {isGenerating && (
+                  <button
+                    onClick={handleStopGeneration}
+                    type="button"
+                    className="p-2 text-red-400 hover:text-red-300 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={loading || !prompt.trim() || !currentChatId}
+                  className="p-2 text-gray-300 hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
+              </div>
             </form>
+            <div className="text-center text-gray-500 text-sm">
+              <p className="font-medium bg-gradient-to-r from-gray-400 via-gray-300 to-gray-400 inline-block text-transparent bg-clip-text">
+                Developed by Ibrahim
+              </p>
+            </div>
           </div>
         </div>
       </main>
