@@ -8,7 +8,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<Array<{ prompt: string; response: string }>>([]);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(true);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [showFloatingCopy, setShowFloatingCopy] = useState(false);
   const responseRef = useRef<HTMLDivElement>(null);
 
@@ -23,6 +23,17 @@ export default function Home() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && isHistoryOpen) {
+        setIsHistoryOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isHistoryOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,43 +125,60 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
       
-      {/* History Sidebar */}
-      <div className={`fixed top-0 left-0 h-full bg-gray-900/95 backdrop-blur-xl transition-all duration-300 z-20 ${isHistoryOpen ? 'w-72' : 'w-0'}`}>
-        <button
-          onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-          className="absolute -right-12 top-4 bg-gray-800/80 p-2 rounded-r-xl backdrop-blur-sm"
-        >
-          <svg className={`w-6 h-6 text-gray-300 transition-transform ${isHistoryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-        
+      {/* Updated History Sidebar */}
+      <div 
+        className={`fixed top-0 left-0 h-full transition-all duration-300 z-30
+          ${isHistoryOpen ? 'w-full md:w-72' : 'w-0'}
+        `}
+      >
+        {/* Semi-transparent overlay for mobile */}
         {isHistoryOpen && (
-          <div className="p-6 h-full overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-bold text-gray-200">History</h3>
-              {history.length > 0 && (
-                <button
-                  onClick={clearHistory}
-                  className="text-sm text-gray-400 hover:text-gray-300"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="space-y-4">
-              {history.map((item, index) => (
-                <div
-                  key={index}
-                  onClick={() => setPrompt(item.prompt)}
-                  className="bg-gray-800/50 rounded-xl p-4 cursor-pointer hover:bg-gray-800/70 transition-all"
-                >
-                  <p className="text-gray-300 text-sm truncate">{item.prompt}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <div 
+            className="fixed inset-0 bg-black/50 md:hidden"
+            onClick={() => setIsHistoryOpen(false)}
+          />
         )}
+        
+        <div 
+          className={`relative h-full bg-gray-900/95 backdrop-blur-xl transition-all duration-300
+            ${isHistoryOpen ? 'w-72' : 'w-0'}`}
+        >
+          <button
+            onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+            className="absolute -right-12 top-4 bg-gray-800/80 p-2 rounded-r-xl backdrop-blur-sm"
+          >
+            <svg className={`w-6 h-6 text-gray-300 transition-transform ${isHistoryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          {isHistoryOpen && (
+            <div className="p-6 h-full overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-gray-200">History</h3>
+                {history.length > 0 && (
+                  <button
+                    onClick={clearHistory}
+                    className="text-sm text-gray-400 hover:text-gray-300"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <div className="space-y-4">
+                {history.map((item, index) => (
+                  <div
+                    key={index}
+                    onClick={() => setPrompt(item.prompt)}
+                    className="bg-gray-800/50 rounded-xl p-4 cursor-pointer hover:bg-gray-800/70 transition-all"
+                  >
+                    <p className="text-gray-300 text-sm truncate">{item.prompt}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Floating Copy Button */}
@@ -172,8 +200,12 @@ export default function Home() {
         </button>
       )}
 
-      {/* Main Content */}
-      <main className={`relative transition-all duration-300 ${isHistoryOpen ? 'ml-72' : 'ml-0'}`}>
+      {/* Updated Main Content */}
+      <main 
+        className={`relative transition-all duration-300
+          ${isHistoryOpen ? 'md:ml-72' : 'ml-0'}
+        `}
+      >
         <div className="container mx-auto px-4 py-12 sm:px-6 lg:px-8 max-w-4xl">
           <div className="text-center mb-12 animate-fade-in">
             <h1 className="text-4xl sm:text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-100 via-gray-300 to-gray-100 mb-4">
