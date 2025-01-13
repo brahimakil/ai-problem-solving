@@ -238,7 +238,9 @@ export default function Home() {
                         <span className="text-xs font-semibold text-white">AI</span>
                       </div>
                     )}
-                    <div className="text-gray-100 whitespace-pre-wrap">{message.content}</div>
+                    <div className="text-gray-100 whitespace-pre-wrap">
+                      {formatResponseText(message.content)}
+                    </div>
                   </div>
                 </div>
               </div>
