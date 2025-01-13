@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_PUBLIC_GEMINI_API_KEY = "AIzaSyBhB_kzcij6VMlVF9Igypy1161m9lU6JTQ"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  external_node_modules = ["canvas"] 
