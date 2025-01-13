@@ -51,6 +51,15 @@ export default function Home() {
       });
 
       const data = await res.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      if (!data.response) {
+        throw new Error('No response received');
+      }
+
       const formattedResponse = data.response
         .replace(/\*\*\s?\*\*\*\*(.*?)\*\*\*/g, '**$1**')
         .replace(/\*\*\s?\*(.*?)\*/g, '**$1**')
@@ -59,7 +68,7 @@ export default function Home() {
       setHistory(prev => [...prev, { prompt, response: formattedResponse }]);
     } catch (error) {
       console.error('Error:', error);
-      setResponse('Failed to get response');
+      setResponse(error instanceof Error ? error.message : 'Failed to get response');
     } finally {
       setLoading(false);
     }
@@ -123,7 +132,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
+      <div className="absolute inset-0 bg-gradient-to-b from-gray-800/30 to-transparent" />
       
       {/* Updated History Sidebar */}
       <div 
