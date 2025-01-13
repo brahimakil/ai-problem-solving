@@ -1,11 +1,19 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Initialize the Google AI SDK
-const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY ?? '');
+const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+
+if (!apiKey) {
+  console.error('NEXT_PUBLIC_GEMINI_API_KEY is not set');
+}
+
+const genAI = new GoogleGenerativeAI(apiKey ?? '');
 
 export async function getGeminiResponse(prompt: string) {
+  if (!apiKey) {
+    throw new Error('API key not configured');
+  }
+
   try {
-    // For text-only input, use the gemini-pro model
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     const result = await model.generateContent(prompt);
     const response = await result.response;

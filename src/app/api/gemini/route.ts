@@ -8,8 +8,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ response });
   } catch (err) {
     console.error('API Error:', err);
+    const errorMessage = err instanceof Error ? err.message : 'Failed to get response from Gemini';
     return NextResponse.json(
-      { error: 'Failed to get response from Gemini' },
+      { error: errorMessage },
       { status: 500 }
     );
   }
