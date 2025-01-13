@@ -2,171 +2,146 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-export default function Home() {
-  const [prompt, setPrompt] = useState('');
-  const [response, setResponse] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [history, setHistory] = useState<Array<{ prompt: string; response: string }>>([]);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [showFloatingCopy, setShowFloatingCopy] = useState(false);
-  const responseRef = useRef<HTMLDivElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+};
 
-  // Load history from localStorage on mount
+type Chat = {
+  id: string;
+  title: string;
+  messages: Message[];
+};
+
+export default function Home() {
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const savedHistory = localStorage.getItem('chatHistory');
-    if (savedHistory) {
-      setHistory(JSON.parse(savedHistory));
+    const savedChats = localStorage.getItem('chats');
+    const savedCurrentChat = localStorage.getItem('currentChatId');
+    if (savedChats) {
+      setChats(JSON.parse(savedChats));
+    }
+    if (savedCurrentChat) {
+      setCurrentChatId(savedCurrentChat);
     }
   }, []);
 
-  // Save history to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem('chatHistory', JSON.stringify(history));
-  }, [history]);
+    localStorage.setItem('chats', JSON.stringify(chats));
+  }, [chats]);
 
-  // Handle Enter key press
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (prompt.trim() && !loading) {
-        formRef.current?.requestSubmit();
-      }
+  useEffect(() => {
+    if (currentChatId) {
+      localStorage.setItem('currentChatId', currentChatId);
+    }
+  }, [currentChatId]);
+
+  const startNewChat = () => {
+    const newChat: Chat = {
+      id: Date.now().toString(),
+      title: 'New Chat',
+      messages: []
+    };
+    setChats(prev => [...prev, newChat]);
+    setCurrentChatId(newChat.id);
+    setPrompt('');
+    setIsHistoryOpen(false);
+  };
+
+  const deleteChat = (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setChats(prev => prev.filter(chat => chat.id !== chatId));
+    if (currentChatId === chatId) {
+      setCurrentChatId(null);
     }
   };
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (responseRef.current) {
-        const rect = responseRef.current.getBoundingClientRect();
-        setShowFloatingCopy(rect.top < 0);
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768 && isHistoryOpen) {
-        setIsHistoryOpen(false);
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [isHistoryOpen]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || loading) return;
-    
+    if (!prompt.trim() || loading || !currentChatId) return;
+
+    const userMessage: Message = { role: 'user', content: prompt.trim() };
+    setPrompt('');
     setLoading(true);
-    setResponse('');
-    setCopied(false);
+
+    // Update current chat with user message
+    setChats(prev => prev.map(chat => 
+      chat.id === currentChatId 
+        ? { ...chat, messages: [...chat.messages, userMessage] }
+        : chat
+    ));
 
     try {
+      const currentChat = chats.find(chat => chat.id === currentChatId);
+      const conversationContext = currentChat?.messages
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n\n');
+      
+      const fullPrompt = conversationContext 
+        ? `${conversationContext}\n\nuser: ${userMessage.content}`
+        : userMessage.content;
+
       const res = await fetch('/api/gemini', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ prompt }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: fullPrompt }),
       });
 
       const data = await res.json();
       
-      if (data.error) {
-        throw new Error(data.error);
-      }
+      if (data.error) throw new Error(data.error);
+      if (!data.response) throw new Error('No response received');
 
-      if (!data.response) {
-        throw new Error('No response received');
-      }
-
-      const formattedResponse = data.response
-        .replace(/\*\*\s?\*\*\*\*(.*?)\*\*\*/g, '**$1**')
-        .replace(/\*\*\s?\*(.*?)\*/g, '**$1**')
-        .replace(/\*(.*?)\*/g, '**$1**');
-      setResponse(formattedResponse);
-      setHistory(prev => [...prev, { prompt, response: formattedResponse }]);
+      const assistantMessage: Message = { role: 'assistant', content: data.response };
+      
+      // Update current chat with AI response
+      setChats(prev => prev.map(chat => 
+        chat.id === currentChatId 
+          ? { ...chat, messages: [...chat.messages, assistantMessage] }
+          : chat
+      ));
     } catch (error) {
       console.error('Error:', error);
-      setResponse(error instanceof Error ? error.message : 'Failed to get response');
+      const errorMessage: Message = {
+        role: 'assistant',
+        content: error instanceof Error ? error.message : 'Failed to get response'
+      };
+      setChats(prev => prev.map(chat => 
+        chat.id === currentChatId 
+          ? { ...chat, messages: [...chat.messages, errorMessage] }
+          : chat
+      ));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(response);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy text:', err);
-    }
-  };
-
-  const clearHistory = () => {
-    setHistory([]);
-  };
+  const currentChat = chats.find(chat => chat.id === currentChatId);
 
   const formatResponseText = (text: string) => {
-    return text.split('\n').map((line, index) => {
-      const headerMatch = line.match(/^\*\*(.*?)\*\*:/);
-      if (headerMatch) {
-        return (
-          <div key={index} className="mb-6">
-            <h3 className="text-xl font-bold text-gray-200 mb-2">
-              {headerMatch[1]}:
-            </h3>
-            <p className="text-gray-300">
-              {line.substring(headerMatch[0].length).trim()}
-            </p>
-          </div>
-        );
-      }
-      
-      if (line.includes('**')) {
-        const parts = line.split(/(\*\*.*?\*\*)/g);
-        return (
-          <p key={index} className="text-gray-300 mb-4 last:mb-0">
-            {parts.map((part, partIndex) => {
-              if (part.startsWith('**') && part.endsWith('**')) {
-                return (
-                  <span key={partIndex} className="font-bold text-gray-200">
-                    {part.slice(2, -2)}
-                  </span>
-                );
-              }
-              return part;
-            })}
-          </p>
-        );
-      }
-
-      return (
-        <p key={index} className="text-gray-300 mb-4 last:mb-0">
-          {line}
-        </p>
-      );
-    });
+    return text.split('\n').map((line, index) => (
+      <p key={index} className="text-gray-300 mb-4 last:mb-0">
+        {line}
+      </p>
+    ));
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="min-h-screen bg-[#343541] flex flex-col">
       <div className="absolute inset-0 bg-gradient-to-b from-gray-800/30 to-transparent" />
       
-      {/* Updated History Sidebar */}
       <div 
         className={`fixed top-0 left-0 h-full transition-all duration-300 z-30
-          ${isHistoryOpen ? 'w-full md:w-72' : 'w-0'}
+          ${isHistoryOpen ? 'w-full md:w-80' : 'w-0'}
         `}
       >
-        {/* Semi-transparent overlay for mobile */}
         {isHistoryOpen && (
           <div 
             className="fixed inset-0 bg-black/50 md:hidden"
@@ -175,12 +150,12 @@ export default function Home() {
         )}
         
         <div 
-          className={`relative h-full bg-gray-900/95 backdrop-blur-xl transition-all duration-300
-            ${isHistoryOpen ? 'w-72' : 'w-0'}`}
+          className={`relative h-full bg-[#202123] transition-all duration-300
+            ${isHistoryOpen ? 'w-80' : 'w-0'}`}
         >
           <button
             onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-            className="absolute -right-12 top-4 bg-gray-800/80 p-2 rounded-r-xl backdrop-blur-sm"
+            className="absolute -right-12 top-4 bg-[#202123] p-2 rounded-r-xl"
           >
             <svg className={`w-6 h-6 text-gray-300 transition-transform ${isHistoryOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -188,26 +163,40 @@ export default function Home() {
           </button>
 
           {isHistoryOpen && (
-            <div className="p-6 h-full overflow-y-auto">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-gray-200">History</h3>
-                {history.length > 0 && (
-                  <button
-                    onClick={clearHistory}
-                    className="text-sm text-gray-400 hover:text-gray-300"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              <div className="space-y-4">
-                {history.map((item, index) => (
+            <div className="p-4 h-full overflow-y-auto">
+              <button
+                onClick={startNewChat}
+                className="w-full mb-4 flex items-center justify-center space-x-2 px-4 py-3 bg-[#2A2B32] hover:bg-[#343541] rounded-lg text-gray-300 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span>New Chat</span>
+              </button>
+
+              <div className="space-y-2">
+                {chats.map(chat => (
                   <div
-                    key={index}
-                    onClick={() => setPrompt(item.prompt)}
-                    className="bg-gray-800/50 rounded-xl p-4 cursor-pointer hover:bg-gray-800/70 transition-all"
+                    key={chat.id}
+                    onClick={() => {
+                      setCurrentChatId(chat.id);
+                      setIsHistoryOpen(false);
+                    }}
+                    className={`group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
+                      chat.id === currentChatId ? 'bg-[#343541]' : 'bg-[#2A2B32] hover:bg-[#343541]'
+                    }`}
                   >
-                    <p className="text-gray-300 text-sm truncate">{item.prompt}</p>
+                    <p className="text-gray-300 text-sm truncate flex-1 mr-2">
+                      {chat.messages[0]?.content.slice(0, 30) || 'New Chat'}...
+                    </p>
+                    <button
+                      onClick={(e) => deleteChat(chat.id, e)}
+                      className="text-gray-500 hover:text-gray-300 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
                 ))}
               </div>
@@ -216,161 +205,89 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Floating Copy Button */}
-      {showFloatingCopy && response && !loading && (
-        <button
-          onClick={handleCopy}
-          className="fixed top-4 right-4 z-20 bg-gray-800/90 backdrop-blur-sm px-4 py-2 rounded-xl shadow-lg transition-all duration-300 hover:bg-gray-700/90 flex items-center space-x-2 text-gray-300"
-        >
-          {copied ? (
-            <span className="text-green-400">Copied!</span>
-          ) : (
-            <>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <span>Copy</span>
-            </>
-          )}
-        </button>
-      )}
+      <main className={`flex-1 flex flex-col transition-all duration-300 ${isHistoryOpen ? 'md:ml-80' : 'ml-0'}`}>
+        <div className="text-center py-8 animate-fade-in px-8 md:px-0">
+          <h1 className="text-4xl sm:text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-100 via-gray-300 to-gray-100 mb-4">
+            AI Problem Solver
+          </h1>
+          <p className="text-gray-400 text-lg">Intelligent solutions for complex problems</p>
+        </div>
 
-      {/* Updated Main Content */}
-      <main 
-        className={`relative transition-all duration-300
-          ${isHistoryOpen ? 'md:ml-72' : 'ml-0'}
-        `}
-      >
-        <div className="container mx-auto px-4 py-12 sm:px-6 lg:px-8 max-w-4xl">
-          <div className="text-center mb-12 animate-fade-in">
-            <h1 className="text-4xl sm:text-6xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-100 via-gray-300 to-gray-100 mb-4">
-              AI Problem Solver
-            </h1>
-            <p className="text-gray-400 text-lg">Intelligent solutions for complex problems</p>
-          </div>
-          
-          <div className="bg-gray-800/40 backdrop-blur-xl rounded-3xl shadow-2xl p-6 sm:p-8 mb-8 transition-all duration-300 hover:bg-gray-800/50 border border-gray-700/50">
-            <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
-              {/* Mobile: Flex container for textarea and button side by side */}
-              <div className="md:hidden flex space-x-4">
-                <div className="relative group flex-grow">
-                  <textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={handleKeyPress}
-                    className="w-full h-40 p-4 bg-gray-900/50 text-gray-100 rounded-2xl border border-gray-700 group-hover:border-gray-600 focus:border-gray-500 focus:ring-2 focus:ring-gray-500 focus:outline-none transition-all duration-300 resize-none"
-                    placeholder="Describe your problem here..."
-                    disabled={loading}
-                  />
-                  <div className="absolute bottom-4 right-4 text-gray-400 text-sm">
-                    {prompt.length}
+        <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-4">
+          <div className="max-w-3xl mx-auto space-y-4">
+            {!currentChat && !loading && (
+              <div className="text-center text-gray-400 mt-8">
+                Select a chat or start a new conversation
+              </div>
+            )}
+            {currentChat?.messages.map((message, index) => (
+              <div
+                key={index}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`
+                  max-w-[85%] sm:max-w-[75%] p-3 sm:p-4 rounded-2xl
+                  ${message.role === 'user' 
+                    ? 'bg-[#343541] ml-4' 
+                    : 'bg-[#444654] mr-4'
+                  }
+                `}>
+                  <div className="flex items-start space-x-3">
+                    {message.role === 'assistant' && (
+                      <div className="w-6 h-6 rounded-full bg-teal-600 flex-shrink-0 flex items-center justify-center">
+                        <span className="text-xs font-semibold text-white">AI</span>
+                      </div>
+                    )}
+                    <div className="text-gray-100 whitespace-pre-wrap">{message.content}</div>
                   </div>
                 </div>
-                
-                {/* Mobile: Vertical submit button */}
-                <button
-                  type="submit"
-                  disabled={loading || !prompt.trim()}
-                  className="h-40 px-4 bg-gradient-to-b from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-gray-100 rounded-2xl font-semibold shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700/50 flex flex-col items-center justify-center space-y-2"
-                >
-                  {loading ? (
-                    <div className="flex flex-col items-center space-y-2">
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
-                    </div>
-                  ) : (
-                    <>
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                      </svg>
-                      <span className="rotate-90 transform origin-center whitespace-nowrap">Send</span>
-                    </>
-                  )}
-                </button>
               </div>
-
-              {/* Desktop: Original textarea layout */}
-              <div className="hidden md:block relative group">
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                  className="w-full h-40 p-4 bg-gray-900/50 text-gray-100 rounded-2xl border border-gray-700 group-hover:border-gray-600 focus:border-gray-500 focus:ring-2 focus:ring-gray-500 focus:outline-none transition-all duration-300 resize-none"
-                  placeholder="Describe your problem here... (Press Enter to submit)"
-                  disabled={loading}
-                />
-                <div className="absolute bottom-4 right-4 text-gray-400 text-sm">
-                  {prompt.length} characters
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl bg-[#444654] mr-4">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0.4s]" />
+                  </div>
                 </div>
               </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+        </div>
 
-              {/* Desktop submit button - remains the same */}
-              <div className="hidden md:flex justify-between items-center">
-                <button
-                  type="submit"
-                  disabled={loading || !prompt.trim()}
-                  className="px-8 py-4 bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-gray-100 rounded-2xl font-semibold shadow-lg transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 border border-gray-700/50"
-                >
-                  {loading ? (
-                    <div className="flex items-center justify-center space-x-2">
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.2s]" />
-                      <div className="w-2 h-2 bg-white rounded-full animate-bounce [animation-delay:0.4s]" />
-                    </div>
-                  ) : (
-                    'Get Solution'
-                  )}
-                </button>
-
-                {history.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={clearHistory}
-                    className="text-gray-400 hover:text-gray-300 transition-colors"
-                  >
-                    Clear History
-                  </button>
-                )}
-              </div>
+        <div className="border-t border-gray-700/50 bg-[#343541]">
+          <div className="max-w-3xl mx-auto px-2 sm:px-4 py-2 sm:py-4">
+            <form ref={formRef} onSubmit={handleSubmit} className="relative">
+              <input
+                type="text"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (prompt.trim() && !loading) {
+                      formRef.current?.requestSubmit();
+                    }
+                  }
+                }}
+                className="w-full bg-[#40414F] text-gray-100 rounded-xl border border-gray-700 px-4 py-3 pr-12 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 focus:outline-none"
+                placeholder="Send a message..."
+                disabled={loading || !currentChatId}
+              />
+              <button
+                type="submit"
+                disabled={loading || !prompt.trim() || !currentChatId}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-gray-300 hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
             </form>
           </div>
-
-          {(response || loading) && (
-            <div ref={responseRef} className="bg-gray-800/40 backdrop-blur-xl rounded-3xl shadow-2xl p-6 sm:p-8 animate-fade-in transition-all duration-300 hover:bg-gray-800/50 border border-gray-700/50">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-300">
-                  Solution
-                </h2>
-                {response && !loading && (
-                  <button
-                    onClick={handleCopy}
-                    className="text-gray-400 hover:text-gray-300 transition-colors flex items-center space-x-2"
-                  >
-                    {copied ? (
-                      <span className="text-green-400">Copied!</span>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-              <div className="prose prose-invert max-w-none">
-                {loading ? (
-                  <div className="h-20 flex items-center justify-center">
-                    <div className="text-gray-400 animate-pulse">Processing your request...</div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">{formatResponseText(response)}</div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>
