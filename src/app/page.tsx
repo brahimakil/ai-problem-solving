@@ -13,7 +13,24 @@ type Chat = {
   messages: Message[];
 };
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+}
+
 export default function Home() {
+  const isMobile = useIsMobile();
   const [chats, setChats] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
@@ -81,20 +98,19 @@ export default function Home() {
   }, [loading]);
 
   useEffect(() => {
+    if (isMobile) return; // Don't show hint on mobile
+    
     const showHint = () => {
       setShowSpaceHint(true);
-      setTimeout(() => setShowSpaceHint(false), 7000); // Hide after 7 seconds
+      setTimeout(() => setShowSpaceHint(false), 7000);
     };
 
-    // Show hint on initial load
     showHint();
-
-    // Add event listener for new chat creation
     const handleNewChat = () => showHint();
     window.addEventListener('newChat', handleNewChat);
 
     return () => window.removeEventListener('newChat', handleNewChat);
-  }, []);
+  }, [isMobile]);
 
   const startNewChat = () => {
     const newChat: Chat = {
@@ -290,7 +306,7 @@ export default function Home() {
           <p className="text-gray-400 text-lg">Intelligent solutions for complex problems</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-4">
+        <div className={`flex-1 overflow-y-auto px-2 sm:px-4 py-4 ${isMobile ? 'pb-32' : ''}`}>
           <div className="max-w-3xl mx-auto space-y-4">
             {!currentChat && !loading && (
               <div className="text-center text-gray-400 mt-8">
@@ -350,51 +366,53 @@ export default function Home() {
 
         <div className="border-t border-gray-700/50 bg-[#343541]">
           <div className="max-w-3xl mx-auto px-2 sm:px-4 py-2 sm:py-4">
-            <form ref={formRef} onSubmit={handleSubmit} className="relative mb-4">
-              <input
-                ref={inputRef}
-                type="text"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    if (prompt.trim() && !loading) {
-                      formRef.current?.requestSubmit();
+            <div className={`${isMobile ? 'fixed bottom-0 left-0 right-0 p-4 bg-[#343541] border-t border-gray-700/50' : ''}`}>
+              <form ref={formRef} onSubmit={handleSubmit} className="relative mb-4 max-w-3xl mx-auto">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (prompt.trim() && !loading) {
+                        formRef.current?.requestSubmit();
+                      }
                     }
-                  }
-                }}
-                className="w-full bg-[#40414F] text-gray-100 rounded-xl border border-gray-700 px-4 py-3 pr-24 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 focus:outline-none"
-                placeholder="Send a message..."
-                disabled={loading || !currentChatId}
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-2">
-                {isGenerating && (
+                  }}
+                  className="w-full bg-[#40414F] text-gray-100 rounded-xl border border-gray-700 px-4 py-3 pr-24 focus:border-gray-500 focus:ring-1 focus:ring-gray-500 focus:outline-none"
+                  placeholder="Send a message..."
+                  disabled={loading || !currentChatId}
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+                  {isGenerating && (
+                    <button
+                      onClick={handleStopGeneration}
+                      type="button"
+                      className="p-2 text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
                   <button
-                    onClick={handleStopGeneration}
-                    type="button"
-                    className="p-2 text-red-400 hover:text-red-300 transition-colors"
+                    type="submit"
+                    disabled={loading || !prompt.trim() || !currentChatId}
+                    className="p-2 text-gray-300 hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
                   </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={loading || !prompt.trim() || !currentChatId}
-                  className="p-2 text-gray-300 hover:text-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
-                </button>
+                </div>
+              </form>
+              <div className="text-center text-gray-500 text-sm">
+                <p className="font-medium bg-gradient-to-r from-gray-400 via-gray-300 to-gray-400 inline-block text-transparent bg-clip-text">
+                  Developed by Ibrahim
+                </p>
               </div>
-            </form>
-            <div className="text-center text-gray-500 text-sm">
-              <p className="font-medium bg-gradient-to-r from-gray-400 via-gray-300 to-gray-400 inline-block text-transparent bg-clip-text">
-                Developed by Ibrahim
-              </p>
             </div>
           </div>
         </div>
