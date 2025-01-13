@@ -11,6 +11,30 @@ export default function Home() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [showFloatingCopy, setShowFloatingCopy] = useState(false);
   const responseRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Load history from localStorage on mount
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('chatHistory');
+    if (savedHistory) {
+      setHistory(JSON.parse(savedHistory));
+    }
+  }, []);
+
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('chatHistory', JSON.stringify(history));
+  }, [history]);
+
+  // Handle Enter key press
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (prompt.trim() && !loading) {
+        formRef.current?.requestSubmit();
+      }
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -37,6 +61,8 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!prompt.trim() || loading) return;
+    
     setLoading(true);
     setResponse('');
     setCopied(false);
@@ -224,21 +250,31 @@ export default function Home() {
           </div>
           
           <div className="bg-gray-800/40 backdrop-blur-xl rounded-3xl shadow-2xl p-6 sm:p-8 mb-8 transition-all duration-300 hover:bg-gray-800/50 border border-gray-700/50">
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
               <div className="relative group">
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={handleKeyPress}
                   className="w-full h-40 p-4 bg-gray-900/50 text-gray-100 rounded-2xl border border-gray-700 group-hover:border-gray-600 focus:border-gray-500 focus:ring-2 focus:ring-gray-500 focus:outline-none transition-all duration-300 resize-none"
-                  placeholder="Describe your problem here..."
+                  placeholder="Describe your problem here... (Press Enter to submit)"
                   disabled={loading}
                 />
                 <div className="absolute bottom-4 right-4 text-gray-400 text-sm">
                   {prompt.length} characters
                 </div>
+                {/* Mobile submit button */}
+                <button
+                  type="submit"
+                  disabled={loading || !prompt.trim()}
+                  className="md:hidden absolute bottom-4 right-20 bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-gray-100 rounded-xl px-4 py-2 font-semibold shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-700/50"
+                >
+                  {loading ? '...' : 'Send'}
+                </button>
               </div>
               
-              <div className="flex justify-between items-center">
+              {/* Desktop submit button */}
+              <div className="hidden md:flex justify-between items-center">
                 <button
                   type="submit"
                   disabled={loading || !prompt.trim()}
