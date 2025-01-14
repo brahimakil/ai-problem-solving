@@ -226,6 +226,14 @@ export default function Home() {
     ));
   };
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#343541] flex flex-col">
       <div className="absolute inset-0 bg-gradient-to-b from-gray-800/30 to-transparent" />
@@ -318,8 +326,7 @@ export default function Home() {
                 key={index}
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div className={`
-                  max-w-[85%] sm:max-w-[75%] p-3 sm:p-4 rounded-2xl
+                <div className={`                  relative max-w-[85%] sm:max-w-[75%] p-3 sm:p-4 rounded-2xl break-words group
                   ${message.role === 'user' 
                     ? 'bg-[#343541] ml-4' 
                     : 'bg-[#444654] mr-4'
@@ -328,13 +335,46 @@ export default function Home() {
                   <div className="flex items-start space-x-3">
                     {message.role === 'assistant' && (
                       <div className="w-6 h-6 rounded-full bg-teal-600 flex-shrink-0 flex items-center justify-center">
-                        <span className="text-xs font-semibold text-white">AI</span>
+                        <span className="text-xs font-semibold text-white">🤖</span>
                       </div>
                     )}
-                    <div className="text-gray-100 whitespace-pre-wrap">
+                    <div className="text-gray-100 whitespace-pre-wrap break-words overflow-hidden">
                       {formatResponseText(message.content)}
                     </div>
                   </div>
+                  
+                  <button
+                    onClick={() => copyToClipboard(message.content)}
+                    className={`
+                      absolute top-2 right-2 p-1.5 
+                      rounded-lg
+                      bg-gray-700/30 
+                      hover:bg-gray-700/50
+                      text-gray-500 
+                      hover:text-gray-300
+                      transition-all duration-200
+                      scale-90 hover:scale-100
+                      ${isMobile 
+                        ? 'opacity-40' 
+                        : 'opacity-0 group-hover:opacity-40 hover:opacity-100'
+                      }
+                    `}
+                    aria-label="Copy message"
+                  >
+                    <svg 
+                      className="w-4 h-4" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={1.5} 
+                        d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" 
+                      />
+                    </svg>
+                  </button>
                 </div>
               </div>
             ))}
