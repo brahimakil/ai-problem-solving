@@ -112,6 +112,12 @@ export default function Home() {
     return () => window.removeEventListener('newChat', handleNewChat);
   }, [isMobile]);
 
+  useEffect(() => {
+    if (chats.length === 0) {
+      startNewChat();
+    }
+  }, [chats.length]);
+
   const startNewChat = () => {
     const newChat: Chat = {
       id: Date.now().toString(),
@@ -127,7 +133,14 @@ export default function Home() {
 
   const deleteChat = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setChats(prev => prev.filter(chat => chat.id !== chatId));
+    setChats(prev => {
+      const updatedChats = prev.filter(chat => chat.id !== chatId);
+      // If we're deleting the last chat, let the useEffect handle creating a new one
+      if (updatedChats.length === 0) {
+        setCurrentChatId(null);
+      }
+      return updatedChats;
+    });
     if (currentChatId === chatId) {
       setCurrentChatId(null);
     }
